@@ -1,117 +1,227 @@
-import {
-  Title,
-  Text,
-  Button,
-  Container,
-  Anchor,
-  Dialog,
-} from "@mantine/core";
-import { Dots } from "../components/Dots";
-import classes from "../styles/HeroText.module.css";
-import Link from "next/link";
-import { loginDetails } from "../common/types";
-import { demoAccountCredentials } from "../common/constants";
-import { useState } from "react";
-import { useDisclosure } from "@mantine/hooks";
+import React, { useEffect, useState } from "react";
 
-interface pageProps {
-  loginHandler: (details: loginDetails) => void;
-}
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
 
-export default function HomePage({ loginHandler }: pageProps) {
-  const [loading, setLoading] = useState(false);
-  const [opened, { open, close }] = useDisclosure(true);
+type Pixel = {
+  _id: string;
+  position: number;
+  color: string;
+};
 
-  async function loginToDemo() {
-    setLoading(true);
-    await loginHandler(demoAccountCredentials);
-    setLoading(false);
+type Assignment = {
+  _id: string;
+  pixelId: string;
+  color: string;
+  createdAt?: string;
+};
+
+export default function Home() {
+  const [pixels, setPixels] = useState<Pixel[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadData() {
+      try {
+        setError(null);
+
+        const [pixelsRes, activityRes] = await Promise.all([
+          fetch(`${API_BASE}/api/pixel-pitch/all`),
+          fetch(`${API_BASE}/api/pixel-pitch/recent-assignments`),
+        ]);
+
+        const pixelsData = await pixelsRes.json();
+        const activityData = await activityRes.json();
+
+        if (!isMounted) return;
+
+        setPixels(pixelsData || []);
+        setAssignments(activityData || []);
+        setLastUpdated(new Date());
+        setLoading(false);
+      } catch (err) {
+        console.error("Error loading canvas data:", err);
+        if (!isMounted) return;
+        setError("Error loading canvas data from server.");
+        setLoading(false);
+      }
+    }
+
+    loadData();
+    const intervalId = setInterval(loadData, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  const side = Math.round(Math.sqrt(pixels.length || 0)) || 0;
+
+  function renderCanvas() {
+    if (loading) {
+      return <p>Loading canvas…</p>;
+    }
+    if (error) {
+      return <p style={{ color: "red" }}>{error}</p>;
+    }
+    if (!pixels.length || side === 0) {
+      return <p>No pixels found in the database.</p>;
+    }
+
+    return (
+      <div
+        style={{
+          border: "1px solid #ccc",
+          padding: 8,
+          display: "inline-block",
+          background: "#fff",
+          borderRadius: 8,
+          boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${side}, 8px)`,
+            gridTemplateRows: `repeat(${side}, 8px)`,
+          }}
+        >
+          {pixels.map((p) => {
+            const x = p.position % side;
+            const y = Math.floor(p.position / side);
+
+            return (
+              <div
+                key={p._id}
+                title={`Pixel ${p._id}\nPosition: ${p.position}\nCoordinates: (${x}, ${y})\nColor: ${p.color}`}
+                style={{
+                  width: 8,
+                  height: 8,
+                  backgroundColor: p.color || "#ffffff",
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderActivity() {
+    if (!assignments.length) {
+      return <p>No recent pixel activity yet.</p>;
+    }
+
+    return (
+      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        {assignments.map((a) => (
+          <li
+            key={a._id}
+            style={{
+              padding: "6px 0",
+              borderBottom: "1px solid #eee",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 14,
+            }}
+          >
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 3,
+                border: "1px solid #ccc",
+                background: a.color || "#ffffff",
+              }}
+            />
+            <span>
+              Pixel{" "}
+              <span style={{ fontFamily: "monospace" }}>{a.pixelId}</span>{" "}
+              set to{" "}
+              <span style={{ fontFamily: "monospace" }}>{a.color}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
   }
 
   return (
-    <div className={classes.root}>
-      <Dialog
-        opened={opened}
-        withCloseButton
-        onClose={close}
-        size="lg"
-        radius="md"
+    <div
+      style={{
+        minHeight: "100vh",
+        padding: 20,
+        fontFamily: "system-ui, sans-serif",
+        background:
+          "radial-gradient(circle at top, #ffffff 0, #f5f5f5 40%, #e9ecf1 100%)",
+      }}
+    >
+      <header
+        style={{
+          maxWidth: 960,
+          margin: "0 auto 20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
       >
-        <Text size="sm" mb="xs" fw={500}>
-          Cookies
-        </Text>
-        <Text size="sm" mb="xs">
-          This website uses cookies to make requests to the server. If cookies
-          are disabled on your browser or if you are using an incognito tab, you
-          will not be able to login. If you face login problems, create an issue
-          on{" "}
-          <Anchor
-            fw={800}
-            fz={"xs"}
-            href="https://github.com/creme332/art98/issues"
-          >
-            {`Github.`}
-          </Anchor>
-        </Text>{" "}
-      </Dialog>
-      <Container className={classes.wrapper}>
-        <Dots className={classes.dots} style={{ left: 0, top: 0 }} />
-        <Dots className={classes.dots} style={{ left: 60, top: 0 }} />
-        <Dots className={classes.dots} style={{ left: 0, top: 140 }} />
-        <Dots className={classes.dots} style={{ right: 0, top: 60 }} />
-        <div className={classes.inner}>
-          <Title className={classes.title}>
-            A real-time{" "}
-            <Text component="span" className={classes.highlight} inherit>
-              collaborative
-            </Text>{" "}
-            pixel art canvas
-          </Title>
-          <Container p={0} size={600}>
-            <Text size="lg" c="dimmed" className={classes.description}>
-              Inspired by r/place, this{" "}
-              <Anchor
-                fw={800}
-                href="https://github.com/creme332/art98/"
-                className={classes.highlight}
-              >
-                {`open-source`}
-              </Anchor>{" "}
-              project supports different users with varying privileges.
-            </Text>
-          </Container>
-          <div className={classes.controls}>
-            <Button
-              component={Link}
-              href={"/register"}
-              size="lg"
-              variant="outline"
-              color="grey"
-            >
-              Register
-            </Button>
-
-            <Button
-              loading={loading}
-              loaderProps={{ type: "dots" }}
-              onClick={loginToDemo}
-              size="lg"
-            >
-              Try demo
-            </Button>
-
-            <Button
-              component={Link}
-              href={"/login"}
-              size="lg"
-              variant="outline"
-              color="grey"
-            >
-              Login
-            </Button>
-          </div>
+        <div>
+          <h1 style={{ margin: 0 }}>Pixel Pitch</h1>
+          <p style={{ margin: "4px 0 0", color: "#555", fontSize: 14 }}>
+            A live, collaborative pixel canvas. Watch it evolve as people buy
+            and color pixels.
+          </p>
         </div>
-      </Container>
+        <a
+          href="/pitch"
+          style={{
+            padding: "8px 16px",
+            background: "#000",
+            color: "#fff",
+            textDecoration: "none",
+            borderRadius: 6,
+            fontSize: 14,
+          }}
+        >
+          Buy a Pixel
+        </a>
+      </header>
+
+      <main
+        style={{
+          maxWidth: 960,
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "2fr 1fr",
+          gap: 24,
+        }}
+      >
+        <section>
+          <h2 style={{ marginTop: 0 }}>Canvas</h2>
+          {renderCanvas()}
+          {lastUpdated && (
+            <p style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
+              Auto-refreshing every 5s. Last updated{" "}
+              {lastUpdated.toLocaleTimeString()}.
+            </p>
+          )}
+        </section>
+
+        <section>
+          <h2 style={{ marginTop: 0 }}>Recent Activity</h2>
+          <p style={{ fontSize: 13, color: "#666", marginBottom: 8 }}>
+            Latest pixel assignments (most recent first).
+          </p>
+          {renderActivity()}
+        </section>
+      </main>
     </div>
   );
 }
