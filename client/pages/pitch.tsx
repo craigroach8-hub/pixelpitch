@@ -15,11 +15,12 @@ type PixelResult = {
   [key: string]: any;
 } | null;
 
-type Stage = "select" | "pay" | "processing" | "done";
+type Stage = "select" | "pay" | "confirm" | "processing" | "done";
 
 const stepLabels: { stage: Stage; label: string }[] = [
   { stage: "select", label: "Choose Color" },
   { stage: "pay", label: "Checkout" },
+  { stage: "confirm", label: "Confirm" },
   { stage: "processing", label: "Assign Pixel" },
   { stage: "done", label: "Complete" },
 ];
@@ -48,6 +49,9 @@ export default function Pitch() {
   const [result, setResult] = useState<PixelResult>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [pendingStripeColor, setPendingStripeColor] = useState<string | null>(
+    null
+  );
 
   console.log("PixelPitch API_BASE:", API_BASE);
 
@@ -68,12 +72,13 @@ export default function Pitch() {
     });
 
     if (success === "true" && returnedColor) {
-      setStage("processing");
-      assignPixelAfterPayment(returnedColor);
+      // Payment succeeded; user must now confirm placing the pixel
+      setPendingStripeColor(returnedColor);
+      setSelectedColor(returnedColor);
+      setStage("confirm");
     } else if (canceled === "true") {
       setStage("select");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function safeJsonParse(res: Response) {
@@ -87,11 +92,12 @@ export default function Pitch() {
     }
   }
 
-  async function assignPixelAfterPayment(color: string) {
-    console.log("assignPixelAfterPayment called with color:", color);
+  async function assignPixel(color: string) {
+    console.log("assignPixel called with color:", color);
 
     try {
       setError(null);
+      setStage("processing");
 
       const res = await fetch(`${API_BASE}/api/pixel-pitch/assign`, {
         method: "POST",
@@ -114,7 +120,7 @@ export default function Pitch() {
     } catch (err: any) {
       console.error("Assignment error (network or parse):", err);
       setResult({
-        error: err.message || "Error assigning pixel after payment",
+        error: err.message || "Error assigning pixel",
       });
       setStage("done");
     }
@@ -160,11 +166,10 @@ export default function Pitch() {
     }
   }
 
-  // DEV: Manual test assign without Stripe
+  // DEV: Manual test assign without Stripe (kept for you, optional)
   async function handleDevAssign() {
     console.log("DEV assign with color:", selectedColor);
-    setStage("processing");
-    await assignPixelAfterPayment(selectedColor);
+    await assignPixel(selectedColor);
   }
 
   function resetForAnotherPurchase() {
@@ -172,6 +177,7 @@ export default function Pitch() {
     setError(null);
     setResult(null);
     setIsRedirecting(false);
+    setPendingStripeColor(null);
 
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -235,8 +241,8 @@ export default function Pitch() {
     >
       <h1 style={{ marginBottom: 4 }}>Pixel Pitch – Buy a Pixel</h1>
       <p style={{ marginTop: 0, marginBottom: 16, color: "#555", fontSize: 14 }}>
-        Choose a color, pay securely with Stripe, and we&apos;ll assign your
-        color to a random pixel on the live canvas.
+        Choose a color, pay securely with Stripe, and then confirm placing your
+        pixel on the live canvas.
       </p>
 
       {renderStepHeader()}
@@ -340,7 +346,7 @@ export default function Pitch() {
             Continue ({priceLabel})
           </button>
 
-          {/* DEV BUTTON – no Stripe, direct assign */}
+          {/* DEV BUTTON – assign without payment (for you) */}
           <div style={{ marginTop: 16, fontSize: 12, color: "#555" }}>
             <p>Dev only: test assigning a pixel without going through Stripe.</p>
             <button
@@ -393,6 +399,50 @@ export default function Pitch() {
         </>
       )}
 
+      {/* CONFIRM AFTER STRIPE */}
+      {stage === "confirm" && pendingStripeColor && (
+        <>
+          <h2>Step 3 — Confirm Your Pixel</h2>
+          <p>Your payment was successful.</p>
+          <p style={{ marginBottom: 12 }}>
+            Click the button below to assign your pixel with color{" "}
+            <span style={{ fontFamily: "monospace" }}>
+              {pendingStripeColor}
+            </span>{" "}
+            to a random spot on the live canvas.
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                background: pendingStripeColor,
+                borderRadius: 4,
+                border: "1px solid #ccc",
+              }}
+            ></div>
+            <div style={{ fontSize: 13, color: "#555" }}>
+              This is the color that was attached to your Stripe checkout.
+            </div>
+          </div>
+
+          <button
+            style={{ padding: "10px 20px" }}
+            onClick={() => assignPixel(pendingStripeColor)}
+          >
+            Finalize and assign my pixel
+          </button>
+        </>
+      )}
+
       {/* PROCESSING */}
       {stage === "processing" && (
         <>
@@ -408,7 +458,7 @@ export default function Pitch() {
 
           {result && !result.error ? (
             <>
-              <p>Your purchase was successful!</p>
+              <p>Your pixel has been placed on the canvas!</p>
 
               <div
                 style={{
