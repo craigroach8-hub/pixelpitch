@@ -77,26 +77,28 @@ export default function Pitch() {
     }
   }
 
-  async function assignPixelAfterPayment(color: string) {
-    try {
-      setError(null);
+async function assignPixelAfterPayment(color: string) {
+  try {
+    setError(null);
 
-      const res = await fetch(`${API_BASE}/api/pixel-pitch/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ color }),
-      });
-
-      const data = await safeJsonParse(res);
-      setResult(data);
-      setStage("done");
-    } catch (err: any) {
-      console.error("Assignment error:", err);
-      setResult({ error: err.message || "Error assigning pixel after payment" });
-      setStage("done");
-    }
+const res = await fetch(
+  `${API_BASE}/api/pixel-pitch/create-checkout-session`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ color: selectedColor }),
   }
+);
+
+    const data = await safeJsonParse(res);
+    setResult(data);
+    setStage("done");
+  } catch (err: any) {
+    console.error("Assignment error:", err);
+    setResult({ error: err.message || "Error assigning pixel after payment" });
+    setStage("done");
+  }
+}
 
   async function handleCheckout() {
     try {
