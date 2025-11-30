@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
@@ -63,6 +64,7 @@ export default function Pitch() {
     } else if (canceled === "true") {
       setStage("select");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function safeJsonParse(res: Response) {
@@ -443,9 +445,9 @@ export default function Pitch() {
             Buy another pixel
           </button>
 
-          <a href="/" style={{ color: "blue" }}>
+          <Link href="/" style={{ color: "blue" }}>
             View canvas
-          </a>
+          </Link>
         </>
       )}
     </div>

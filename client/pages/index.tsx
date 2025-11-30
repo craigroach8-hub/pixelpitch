@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000";
@@ -179,7 +180,7 @@ export default function Home() {
             and color pixels.
           </p>
         </div>
-        <a
+        <Link
           href="/pitch"
           style={{
             padding: "8px 16px",
@@ -191,7 +192,7 @@ export default function Home() {
           }}
         >
           Buy a Pixel
-        </a>
+        </Link>
       </header>
 
       <main
