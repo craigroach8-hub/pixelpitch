@@ -37,11 +37,27 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // ---------- Middleware ----------
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://pixelpitch-nine.vercel.app",
+];
+
 app.use(
   cors({
-    origin: "*",
+    origin: function (origin, callback) {
+      // allow requests with no origin (e.g. server-to-server or curl)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
   })
 );
+
 app.use(express.json());
 
 // ---------- Rare color pricing ----------
