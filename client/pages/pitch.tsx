@@ -24,11 +24,10 @@ const stepLabels: { stage: Stage; label: string }[] = [
   { stage: "done", label: "Complete" },
 ];
 
-// Mirror server-side pricing logic
 const RARE_PRICE_MAP: Record<string, number> = {
-  "#ffd700": 500, // Gold
-  "#00ffff": 200, // Cyan
-  "#ff00ff": 200, // Magenta
+  "#ffd700": 500,
+  "#00ffff": 200,
+  "#ff00ff": 200,
 };
 
 function getPriceForColor(color: string): number {
@@ -50,6 +49,8 @@ export default function Pitch() {
   const [error, setError] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
+  console.log("PixelPitch API_BASE:", API_BASE);
+
   // Detect return from Stripe
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -58,6 +59,13 @@ export default function Pitch() {
     const success = params.get("success");
     const canceled = params.get("canceled");
     const returnedColor = params.get("color");
+
+    console.log("Stripe return params:", {
+      success,
+      canceled,
+      returnedColor,
+      search: window.location.search,
+    });
 
     if (success === "true" && returnedColor) {
       setStage("processing");
@@ -71,35 +79,46 @@ export default function Pitch() {
   async function safeJsonParse(res: Response) {
     const text = await res.text();
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      return parsed;
     } catch {
       console.error("Non-JSON response from server:", text);
       throw new Error("Server returned invalid (non-JSON) response.");
     }
   }
 
-async function assignPixelAfterPayment(color: string) {
-  try {
-    setError(null);
+  async function assignPixelAfterPayment(color: string) {
+    console.log("assignPixelAfterPayment called with color:", color);
 
-const res = await fetch(
-  `${API_BASE}/api/pixel-pitch/create-checkout-session`,
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ color: selectedColor }),
-  }
-);
+    try {
+      setError(null);
 
-    const data = await safeJsonParse(res);
-    setResult(data);
-    setStage("done");
-  } catch (err: any) {
-    console.error("Assignment error:", err);
-    setResult({ error: err.message || "Error assigning pixel after payment" });
-    setStage("done");
+      const res = await fetch(`${API_BASE}/api/pixel-pitch/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ color }),
+      });
+
+      console.log("assign response status:", res.status, res.ok);
+
+      const data = await safeJsonParse(res);
+      console.log("assign response body:", data);
+
+      if (!res.ok) {
+        setResult({ error: data.error || "Error assigning pixel" });
+      } else {
+        setResult(data);
+      }
+      setStage("done");
+    } catch (err: any) {
+      console.error("Assignment error (network or parse):", err);
+      setResult({
+        error: err.message || "Error assigning pixel after payment",
+      });
+      setStage("done");
+    }
   }
-}
 
   async function handleCheckout() {
     try {
@@ -116,10 +135,16 @@ const res = await fetch(
         }
       );
 
+      console.log(
+        "create-checkout-session status:",
+        res.status,
+        res.ok
+      );
+
       const data = await safeJsonParse(res);
+      console.log("create-checkout-session body:", data);
 
       if (!res.ok || !data.url) {
-        console.error("Checkout session error:", data);
         setIsRedirecting(false);
         setError(data.error || "Error creating checkout session");
         return;
@@ -133,6 +158,13 @@ const res = await fetch(
       setError(err.message || "Checkout error");
       setIsRedirecting(false);
     }
+  }
+
+  // DEV: Manual test assign without Stripe
+  async function handleDevAssign() {
+    console.log("DEV assign with color:", selectedColor);
+    setStage("processing");
+    await assignPixelAfterPayment(selectedColor);
   }
 
   function resetForAnotherPurchase() {
@@ -307,6 +339,23 @@ const res = await fetch(
           >
             Continue ({priceLabel})
           </button>
+
+          {/* DEV BUTTON – no Stripe, direct assign */}
+          <div style={{ marginTop: 16, fontSize: 12, color: "#555" }}>
+            <p>Dev only: test assigning a pixel without going through Stripe.</p>
+            <button
+              style={{
+                padding: "6px 12px",
+                border: "1px dashed #555",
+                background: "#fafafa",
+                fontSize: 12,
+              }}
+              type="button"
+              onClick={handleDevAssign}
+            >
+              DEV: Assign pixel now (no payment)
+            </button>
+          </div>
         </>
       )}
 
