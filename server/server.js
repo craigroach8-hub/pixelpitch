@@ -61,7 +61,7 @@ app.use(
 app.use(express.json());
 
 // ---------- Rare color pricing ----------
-// cents: 50 = $0.50, 200 = $2.00, 500 = $5.00
+// cents: 1000 = $1.00, 200 = $2.00, 500 = $5.00
 const RARE_PRICE_MAP = {
   "#ffd700": 500, // Gold
   "#00ffff": 200, // Cyan
@@ -69,9 +69,9 @@ const RARE_PRICE_MAP = {
 };
 
 function getPriceForColor(color) {
-  if (!color || typeof color !== "string") return 50;
+  if (!color || typeof color !== "string") return 100;
   const c = color.toLowerCase();
-  return RARE_PRICE_MAP[c] || 50;
+  return RARE_PRICE_MAP[c] || 100;
 }
 
 // ---------- MongoDB Connection ----------
@@ -198,7 +198,7 @@ app.post("/api/pixel-pitch/create-checkout-session", async (req, res) => {
     }
 
     const priceCents = getPriceForColor(color);
-    const isRare = priceCents > 50;
+    const isRare = priceCents > 100;
 
     const successUrl =
       process.env.STRIPE_SUCCESS_URL ||
