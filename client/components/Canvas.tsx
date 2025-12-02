@@ -256,64 +256,21 @@ export default function Canvas({ loggedIn, userData }: pageProps) {
     if (
       !confirm("Are you sure to reset the canvas? This action is irreversible.")
     )
-      return;
-
+      return
     socket.emit("resetCanvas");
   }
 
   const canvasElement = (
     <canvas
-      height={canvasSizeInPixels}
-      width={canvasSizeInPixels}
-      onMouseEnter={(e) => {
-        // mouse entered canvas
-        displayLivePixelData(e); // show live cursor coordinates
-      }}
-      onMouseMove={(e) => {
-        displayLivePixelData(e);
-
-        if (drawing) {
-          // plot pixels on right mouse hold
-          handleDraw(e);
-        }
-      }}
-      onMouseDown={(e) => {
-        // check if right mouse button is clicked
-        if (e.button == 2) {
-          // disable panning and zooming for right mouse click
-          e.preventDefault();
-          e.stopPropagation();
-
-          setDrawing(true); // allow drawing
-        }
-      }}
-      onMouseUp={(event) => {
-        // check if right mouse button is released on canvas
-        if (event.button == 2) {
-          setDrawing(false);
-        }
-      }}
-      onMouseLeave={() => {
-        setDrawing(false);
-      }}
-      onContextMenu={(e) => {
-        //  This function allows user to draw a single pixel while mouse is not moving.
-        // Prevent context menu from opening
-        e.preventDefault();
-        e.stopPropagation();
-
-        setDrawing(true);
-        handleDraw(e);
-        setDrawing(false);
-      }}
-      className={styles.canva}
-      ref={canvasRef}
-    />
+  height={canvasSizeInPixels}
+  width={canvasSizeInPixels}
+  style={{ pointerEvents: 'none' }}
+ />
   );
 
   return (
     <Stack pos="relative">
-      <LoadingOverlay
+    <LoadingOverlay
         visible={visibleLoading}
         zIndex={1000}
         overlayProps={{ radius: "sm", blur: 2 }}

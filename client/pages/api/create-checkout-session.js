@@ -69,7 +69,10 @@ export default async function handler(req, res) {
         color,
         pixelCount: String(pixelCount),
       },
-      success_url: `${origin}/pitch?status=success`,
+      // Include pixel info in the success URL so the client can persist it
+      success_url: `${origin}/pitch?status=success&pixelIndex=${encodeURIComponent(
+        String(pixelIndex)
+      )}&color=${encodeURIComponent(color)}`,
       cancel_url: `${origin}/pitch?status=cancelled`,
     });
 
@@ -81,4 +84,3 @@ export default async function handler(req, res) {
       .json({ error: "Failed to create Stripe Checkout Session." });
   }
 }
-

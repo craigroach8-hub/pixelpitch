@@ -1,557 +1,346 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "https://pixelpitch-server.onrender.com";
+const GRID_SIZE = 50; // 50x50 = 2500 pixels
+const LOCAL_STORAGE_KEY = "pixelPitchGrid_v1";
 
-type PixelResult = {
-  color?: string;
-  id?: string;
-  position?: number;
-  x?: number;
-  y?: number;
-  error?: string;
-  [key: string]: any;
-} | null;
-
-type Stage = "select" | "pay" | "confirm" | "processing" | "done";
-
-const stepLabels: { stage: Stage; label: string }[] = [
-  { stage: "select", label: "Choose Color" },
-  { stage: "pay", label: "Checkout" },
-  { stage: "confirm", label: "Confirm" },
-  { stage: "processing", label: "Assign Pixel" },
-  { stage: "done", label: "Complete" },
-];
-
-const RARE_PRICE_MAP: Record<string, number> = {
-  "#ffd700": 500,
-  "#00ffff": 200,
-  "#ff00ff": 200,
+type PixelState = {
+  color: string | null;
 };
 
-function getPriceForColor(color: string): number {
-  if (!color) return 50;
-  const c = color.toLowerCase();
-  return RARE_PRICE_MAP[c] || 50;
-}
+const createInitialPixels = (): PixelState[] =>
+  Array.from({ length: GRID_SIZE * GRID_SIZE }, () => ({ color: null }));
 
-const RARE_COLORS_DISPLAY = [
-  { hex: "#ffd700", label: "Gold (Rare)", cents: 500 },
-  { hex: "#00ffff", label: "Cyan (Featured)", cents: 200 },
-  { hex: "#ff00ff", label: "Magenta (Featured)", cents: 200 },
-];
+export default function PitchPage() {
+  const [pixels, setPixels] = useState<PixelState[]>(createInitialPixels);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedColor, setSelectedColor] = useState<string>("#ff0000");
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-export default function Pitch() {
-  const [selectedColor, setSelectedColor] = useState("#ff0000");
-  const [stage, setStage] = useState<Stage>("select");
-  const [result, setResult] = useState<PixelResult>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isRedirecting, setIsRedirecting] = useState(false);
-  const [pendingStripeColor, setPendingStripeColor] = useState<string | null>(
-    null
-  );
-
-  console.log("PixelPitch API_BASE:", API_BASE);
-
-  // Detect return from Stripe
+  // 1) On first load, try to restore pixels from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const params = new URLSearchParams(window.location.search);
-    const success = params.get("success");
-    const canceled = params.get("canceled");
-    const returnedColor = params.get("color");
+    try {
+      const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (!raw) return;
 
-    console.log("Stripe return params:", {
-      success,
-      canceled,
-      returnedColor,
-      search: window.location.search,
-    });
+      const parsed = JSON.parse(raw) as PixelState[];
 
-    if (success === "true" && returnedColor) {
-      // Payment succeeded; user must now confirm placing the pixel
-      setPendingStripeColor(returnedColor);
-      setSelectedColor(returnedColor);
-      setStage("confirm");
-    } else if (canceled === "true") {
-      setStage("select");
+      if (Array.isArray(parsed) && parsed.length === GRID_SIZE * GRID_SIZE) {
+        setPixels(parsed);
+      }
+    } catch (err) {
+      console.error("Failed to load saved pixels:", err);
     }
   }, []);
 
-  async function safeJsonParse(res: Response) {
-    const text = await res.text();
-    try {
-      const parsed = JSON.parse(text);
-      return parsed;
-    } catch {
-      console.error("Non-JSON response from server:", text);
-      throw new Error("Server returned invalid (non-JSON) response.");
-    }
-  }
-
-  async function assignPixel(color: string) {
-    console.log("assignPixel called with color:", color);
+  // 2) Whenever pixels change, save them to localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
     try {
-      setError(null);
-      setStage("processing");
-
-      const res = await fetch(`${API_BASE}/api/pixel-pitch/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ color }),
-      });
-
-      console.log("assign response status:", res.status, res.ok);
-
-      const data = await safeJsonParse(res);
-      console.log("assign response body:", data);
-
-      if (!res.ok) {
-        setResult({ error: data.error || "Error assigning pixel" });
-      } else {
-        setResult(data);
-      }
-      setStage("done");
-    } catch (err: any) {
-      console.error("Assignment error (network or parse):", err);
-      setResult({
-        error: err.message || "Error assigning pixel",
-      });
-      setStage("done");
-    }
-  }
-
-  async function handleCheckout() {
-    try {
-      setError(null);
-      setIsRedirecting(true);
-
-      const res = await fetch(
-        `${API_BASE}/api/pixel-pitch/create-checkout-session`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ color: selectedColor }),
-        }
+      window.localStorage.setItem(
+        LOCAL_STORAGE_KEY,
+        JSON.stringify(pixels)
       );
-
-      console.log(
-        "create-checkout-session status:",
-        res.status,
-        res.ok
-      );
-
-      const data = await safeJsonParse(res);
-      console.log("create-checkout-session body:", data);
-
-      if (!res.ok || !data.url) {
-        setIsRedirecting(false);
-        setError(data.error || "Error creating checkout session");
-        return;
-      }
-
-      if (typeof window !== "undefined") {
-        window.location.href = data.url;
-      }
-    } catch (err: any) {
-      console.error("Checkout error:", err);
-      setError(err.message || "Checkout error");
-      setIsRedirecting(false);
+    } catch (err) {
+      console.error("Failed to save pixels:", err);
     }
-  }
+  }, [pixels]);
 
-  // DEV: Manual test assign without Stripe (kept for you, optional)
-  async function handleDevAssign() {
-    console.log("DEV assign with color:", selectedColor);
-    await assignPixel(selectedColor);
-  }
+  // 3) After Stripe redirect, use URL params to mark the purchased pixel
+  useEffect(() => {
+    if (typeof window === "undefined") return;
 
-  function resetForAnotherPurchase() {
-    setStage("select");
-    setError(null);
-    setResult(null);
-    setIsRedirecting(false);
-    setPendingStripeColor(null);
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get("status");
+    const pixelIndexParam = url.searchParams.get("pixelIndex");
+    const colorParam = url.searchParams.get("color");
 
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("success");
+    if (status === "success" && pixelIndexParam && colorParam) {
+      const idx = parseInt(pixelIndexParam, 10);
+
+      if (
+        !Number.isNaN(idx) &&
+        idx >= 0 &&
+        idx < GRID_SIZE * GRID_SIZE
+      ) {
+        setPixels((prev) => {
+          const next = [...prev];
+          next[idx] = { color: colorParam };
+          return next;
+        });
+
+        setSelectedIndex(idx);
+        setSelectedColor(colorParam);
+        setMessage("Pixel saved after purchase. Welcome to the canvas.");
+      }
+
+      // Clean the URL so refreshes don't reapply the same update
+      url.searchParams.delete("status");
+      url.searchParams.delete("pixelIndex");
       url.searchParams.delete("color");
-      url.searchParams.delete("canceled");
       window.history.replaceState({}, "", url.toString());
     }
-  }
+  }, []);
 
-  function renderStepHeader() {
+  const handlePixelClick = (index: number) => {
+    setSelectedIndex(index);
+    setMessage(null);
+  };
+
+  const handleColorChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedColor(event.target.value);
+  };
+
+  const handlePreviewColor = () => {
+    if (selectedIndex === null) {
+      setMessage("Select a pixel on the canvas first.");
+      return;
+    }
+
+    const updated = [...pixels];
+    updated[selectedIndex] = { color: selectedColor };
+    setPixels(updated);
+    setMessage("Color applied locally. Checkout to lock your pixel.");
+  };
+
+  const handleCheckout = async () => {
+    if (selectedIndex === null) {
+      setMessage("Select a pixel before checking out.");
+      return;
+    }
+
+    setIsCheckingOut(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pixelIndex: selectedIndex,
+          color: selectedColor,
+          pixels: 1, // always 1 for now
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Checkout request failed.");
+      }
+
+      const data = await response.json();
+
+      if (data?.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
+      } else {
+        setMessage("Checkout created, but no redirect URL was returned.");
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("Something went wrong starting checkout. Try again.");
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  const renderPixel = (pixel: PixelState, index: number) => {
+    const isSelected = index === selectedIndex;
+
     return (
-      <div
+      <button
+        key={index}
+        onClick={() => handlePixelClick(index)}
         style={{
-          display: "flex",
-          gap: 10,
-          marginBottom: 24,
-          fontSize: 12,
-          textTransform: "uppercase",
+          width: "10px",
+          height: "10px",
+          padding: 0,
+          margin: 0,
+          border: isSelected ? "1px solid #ffffff" : "1px solid #333333",
+          backgroundColor: pixel.color ?? "#111111",
+          cursor: "pointer",
         }}
-      >
-        {stepLabels.map((step, index) => {
-          const current = stepLabels.findIndex((s) => s.stage === stage);
-          const isActive = index === current;
-          const isDone = index < current;
-
-          return (
-            <div
-              key={step.stage}
-              style={{ display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <div
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  background: isActive ? "#000" : isDone ? "#ccc" : "#fff",
-                  border: "1px solid #888",
-                }}
-              ></div>
-              <span>{step.label}</span>
-            </div>
-          );
-        })}
-      </div>
+        aria-label={`Pixel ${index}`}
+      />
     );
-  }
-
-  const priceCents = getPriceForColor(selectedColor);
-  const priceLabel = `$${(priceCents / 100).toFixed(2)}`;
-  const isRare = priceCents > 50;
+  };
 
   return (
     <div
       style={{
-        padding: 20,
-        fontFamily: "system-ui, sans-serif",
-        maxWidth: 640,
-        margin: "0 auto",
+        minHeight: "100vh",
+        backgroundColor: "black",
+        color: "white",
+        display: "flex",
+        flexDirection: "column",
+        padding: "1.5rem",
       }}
     >
-      <h1 style={{ marginBottom: 4 }}>Pixel Pitch – Buy a Pixel</h1>
-      <p style={{ marginTop: 0, marginBottom: 16, color: "#555", fontSize: 14 }}>
-        Choose a color, pay securely with Stripe, and then confirm placing your
-        pixel on the live canvas.
-      </p>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <h1 style={{ fontSize: "1.75rem", fontWeight: "bold" }}>
+          Pixel Pitch
+        </h1>
 
-      {renderStepHeader()}
-
-      {error && (
-        <p style={{ color: "red", marginBottom: 16 }}>Error: {error}</p>
-      )}
-
-      {/* SELECT COLOR */}
-      {stage === "select" && (
-        <>
-          <h2>Step 1 — Choose Your Color</h2>
-
-          <div
+        <Link href="/">
+          <button
             style={{
-              display: "flex",
-              gap: 16,
-              margin: "16px 0",
-              alignItems: "center",
+              padding: "0.4rem 0.9rem",
+              fontSize: "0.9rem",
+              borderRadius: "9999px",
+              border: "1px solid #ffffff33",
+              background: "transparent",
+              color: "white",
+              cursor: "pointer",
             }}
           >
+            Back to Home
+          </button>
+        </Link>
+      </header>
+
+      <main
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          gap: "2rem",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+        {/* Canvas */}
+        <section
+          style={{
+            flex: 2,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${GRID_SIZE}, 10px)`,
+              gridTemplateRows: `repeat(${GRID_SIZE}, 10px)`,
+              gap: "0px",
+              backgroundColor: "#000000",
+              border: "1px solid #333333",
+              padding: "4px",
+            }}
+          >
+            {pixels.map((pixel, index) => renderPixel(pixel, index))}
+          </div>
+        </section>
+
+        {/* Controls */}
+        <section
+          style={{
+            flex: 1,
+            borderLeft: "1px solid #333333",
+            paddingLeft: "1.5rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <h2 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
+              Choose Your Color
+            </h2>
             <input
               type="color"
               value={selectedColor}
-              onChange={(e) => setSelectedColor(e.target.value)}
-              style={{ width: 50, height: 50, border: "none" }}
-            />
-            <div>
-              <div style={{ fontFamily: "monospace" }}>{selectedColor}</div>
-              <div
-                style={{
-                  marginTop: 6,
-                  width: 60,
-                  height: 20,
-                  borderRadius: 4,
-                  background: selectedColor,
-                  border: "1px solid #ccc",
-                }}
-              ></div>
-              <div style={{ marginTop: 6, fontSize: 13, color: "#555" }}>
-                Price: <strong>{priceLabel}</strong>{" "}
-                {isRare && <span>(rare color)</span>}
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: 12,
-              borderRadius: 6,
-              border: "1px solid #ddd",
-              background: "#fafafa",
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontSize: 13, marginBottom: 6 }}>
-              <strong>Rare & Featured Colors</strong>
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {RARE_COLORS_DISPLAY.map((rc) => (
-                <button
-                  key={rc.hex}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 8px",
-                    borderRadius: 4,
-                    border:
-                      selectedColor.toLowerCase() === rc.hex.toLowerCase()
-                        ? "2px solid #000"
-                        : "1px solid #ccc",
-                    background: "#fff",
-                    fontSize: 12,
-                    cursor: "pointer",
-                  }}
-                  type="button"
-                  onClick={() => setSelectedColor(rc.hex)}
-                >
-                  <span
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 3,
-                      border: "1px solid #ccc",
-                      background: rc.hex,
-                    }}
-                  />
-                  <span>
-                    {rc.label} — ${(rc.cents / 100).toFixed(2)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button
-            style={{ padding: "10px 20px" }}
-            onClick={() => setStage("pay")}
-          >
-            Continue ({priceLabel})
-          </button>
-
-          {/* DEV BUTTON – assign without payment (for you) */}
-          <div style={{ marginTop: 16, fontSize: 12, color: "#555" }}>
-            <p>Dev only: test assigning a pixel without going through Stripe.</p>
-            <button
+              onChange={handleColorChange}
               style={{
-                padding: "6px 12px",
-                border: "1px dashed #555",
-                background: "#fafafa",
-                fontSize: 12,
+                width: "60px",
+                height: "30px",
+                border: "none",
+                cursor: "pointer",
+                background: "transparent",
               }}
-              type="button"
-              onClick={handleDevAssign}
+            />
+          </div>
+
+          <div>
+            <button
+              onClick={handlePreviewColor}
+              style={{
+                padding: "0.5rem 1rem",
+                borderRadius: "9999px",
+                border: "1px solid #ffffff33",
+                background: "#222222",
+                color: "white",
+                cursor: "pointer",
+                marginRight: "0.5rem",
+                marginBottom: "0.5rem",
+              }}
             >
-              DEV: Assign pixel now (no payment)
+              Apply Color to Selected Pixel
             </button>
           </div>
-        </>
-      )}
-
-      {/* CHECKOUT */}
-      {stage === "pay" && (
-        <>
-          <h2>Step 2 — Secure Stripe Checkout</h2>
-
-          <p>
-            You are purchasing <strong>1 pixel</strong> with color{" "}
-            <span style={{ fontFamily: "monospace" }}>{selectedColor}</span> for{" "}
-            <strong>{priceLabel}</strong>.
-          </p>
-
-          <button
-            style={{ padding: "10px 20px", marginTop: 16 }}
-            onClick={handleCheckout}
-            disabled={isRedirecting}
-          >
-            {isRedirecting ? "Redirecting…" : "Go to Checkout"}
-          </button>
-
-          <button
-            style={{
-              padding: "10px 20px",
-              marginLeft: 10,
-              marginTop: 16,
-              background: "#eee",
-            }}
-            onClick={() => setStage("select")}
-            disabled={isRedirecting}
-          >
-            Back
-          </button>
-        </>
-      )}
-
-      {/* CONFIRM AFTER STRIPE */}
-      {stage === "confirm" && pendingStripeColor && (
-        <>
-          <h2>Step 3 — Confirm Your Pixel</h2>
-          <p>Your payment was successful.</p>
-          <p style={{ marginBottom: 12 }}>
-            Click the button below to assign your pixel with color{" "}
-            <span style={{ fontFamily: "monospace" }}>
-              {pendingStripeColor}
-            </span>{" "}
-            to a random spot on the live canvas.
-          </p>
 
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 16,
+              marginTop: "1rem",
+              paddingTop: "1rem",
+              borderTop: "1px solid #333333",
             }}
           >
-            <div
+            <h2 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
+              Lock It In
+            </h2>
+            <p style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+              Each pixel costs <strong>$1.00</strong>. Your choice and your
+              color become part of the final artwork on this device.
+            </p>
+
+            <button
+              onClick={handleCheckout}
+              disabled={isCheckingOut}
               style={{
-                width: 40,
-                height: 40,
-                background: pendingStripeColor,
-                borderRadius: 4,
-                border: "1px solid #ccc",
+                padding: "0.6rem 1.3rem",
+                borderRadius: "9999px",
+                border: "1px solid #ffffff33",
+                background: isCheckingOut ? "#444444" : "white",
+                color: isCheckingOut ? "#aaaaaa" : "black",
+                cursor: isCheckingOut ? "default" : "pointer",
+                fontWeight: "bold",
               }}
-            ></div>
-            <div style={{ fontSize: 13, color: "#555" }}>
-              This is the color that was attached to your Stripe checkout.
-            </div>
+            >
+              {isCheckingOut ? "Starting Checkout..." : "Checkout for $1"}
+            </button>
           </div>
 
-          <button
-            style={{ padding: "10px 20px" }}
-            onClick={() => assignPixel(pendingStripeColor)}
-          >
-            Finalize and assign my pixel
-          </button>
-        </>
-      )}
-
-      {/* PROCESSING */}
-      {stage === "processing" && (
-        <>
-          <h2>Assigning Your Pixel…</h2>
-          <p>Please wait while we apply your color to a random pixel.</p>
-        </>
-      )}
-
-      {/* DONE */}
-      {stage === "done" && (
-        <>
-          <h2>Pixel Assigned</h2>
-
-          {result && !result.error ? (
-            <>
-              <p>Your pixel has been placed on the canvas!</p>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  padding: 12,
-                  border: "1px solid #ccc",
-                  borderRadius: 6,
-                  background: "#fafafa",
-                  marginBottom: 12,
-                }}
-              >
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    background: result.color,
-                    borderRadius: 4,
-                    border: "1px solid #ccc",
-                  }}
-                ></div>
-                <div style={{ fontSize: 14 }}>
-                  <div>
-                    <strong>Color:</strong>{" "}
-                    <span style={{ fontFamily: "monospace" }}>
-                      {result.color}
-                    </span>
-                  </div>
-                  <div>
-                    <strong>Pixel ID:</strong>{" "}
-                    <span style={{ fontFamily: "monospace" }}>
-                      {result.id}
-                    </span>
-                  </div>
-                  {typeof result.position === "number" &&
-                    typeof result.x === "number" &&
-                    typeof result.y === "number" && (
-                      <>
-                        <div>
-                          <strong>Position (index):</strong>{" "}
-                          <span style={{ fontFamily: "monospace" }}>
-                            {result.position}
-                          </span>
-                        </div>
-                        <div>
-                          <strong>Canvas coordinates:</strong>{" "}
-                          <span style={{ fontFamily: "monospace" }}>
-                            ({result.x}, {result.y})
-                          </span>
-                        </div>
-                      </>
-                    )}
-                </div>
-              </div>
-
-              <p style={{ fontSize: 13, color: "#555" }}>
-                You can now view the live canvas and see your pixel as part of
-                the evolving artwork.
-              </p>
-            </>
-          ) : (
-            <p style={{ color: "red" }}>
-              Error assigning pixel: {result?.error}
-            </p>
+          {selectedIndex !== null && (
+            <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+              Selected pixel index: <strong>{selectedIndex}</strong>
+            </div>
           )}
 
-          <pre
-            style={{
-              background: "#eee",
-              padding: 10,
-              marginTop: 16,
-              borderRadius: 6,
-              whiteSpace: "pre-wrap",
-              fontSize: 12,
-              maxHeight: 220,
-              overflow: "auto",
-            }}
-          >
-{JSON.stringify(result, null, 2)}
-          </pre>
-
-          <button
-            style={{ padding: "8px 16px", marginTop: 16, marginRight: 10 }}
-            onClick={resetForAnotherPurchase}
-          >
-            Buy another pixel
-          </button>
-
-          <Link href="/" style={{ color: "blue" }}>
-            View canvas
-          </Link>
-        </>
-      )}
+          {message && (
+            <div
+              style={{
+                marginTop: "0.75rem",
+                fontSize: "0.85rem",
+                color: "#dddddd",
+              }}
+            >
+              {message}
+            </div>
+          )}
+        </section>
+      </main>
     </div>
   );
 }
